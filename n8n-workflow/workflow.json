@@ -1,0 +1,146 @@
+{
+  "name": "Notion Vocab AI Automation",
+  "nodes": [
+    {
+      "id": "1",
+      "name": "Notion Trigger",
+      "type": "n8n-nodes-base.notionTrigger",
+      "typeVersion": 1,
+      "position": [200, 300],
+      "parameters": {
+        "resource": "database",
+        "databaseId": "={{$env.NOTION_DATABASE_ID}}",
+        "event": "pageUpdated",
+        "filters": {
+          "matchType": "anyFilter",
+          "conditions": [
+            {
+              "property": "AI_done",
+              "checkbox": {
+                "equals": false
+              }
+            }
+          ]
+        },
+        "options": {
+          "limit": 20,
+          "pollTime": "5m"
+        }
+      },
+      "credentials": {
+        "notionApi": {
+          "id": "replace-with-your-credential-id",
+          "name": "Notion Personal Integration"
+        }
+      }
+    },
+    {
+      "id": "2",
+      "name": "Prepare Payload",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [430, 300],
+      "parameters": {
+        "functionCode": "const promptTemplate = `You are a bilingual English<>Thai lexicographer. Given an English vocabulary word, respond ONLY with minified JSON containing keys pos, ipa, thai, synonyms (array of exactly 3 items), and example.\nUse IPA slashes, concise Thai definition, common synonyms, and an everyday sentence that includes the word.\nWord: {{word}}`;\n\nreturn items\n  .map(item => {\n    const pageId = item.json.id;\n    const englishProperty = item.json.properties?.English?.title ?? [];\n    const word = englishProperty[0]?.plain_text?.trim();\n\n    if (!word) {\n      return null;\n    }\n\n    const prompt = promptTemplate.replace('{{word}}', word);\n\n    return {\n      json: {\n        pageId,\n        word,\n        prompt\n      }\n    };\n  })\n  .filter(Boolean);"
+      }
+    },
+    {
+      "id": "3",
+      "name": "Call Ollama",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [680, 300],
+      "parameters": {
+        "requestMethod": "POST",
+        "url": "={{ ($env.OLLAMA_BASE_URL || 'http://ollama:11434') + '/api/generate' }}",
+        "jsonParameters": true,
+        "options": {
+          "bodyContentType": "json",
+          "responseFormat": "json"
+        },
+        "body": "={{ { model: $env.OLLAMA_MODEL || 'phi3:mini', prompt: $json.prompt, format: 'json', stream: false } }}"
+      }
+    },
+    {
+      "id": "4",
+      "name": "Transform AI JSON",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [920, 300],
+      "parameters": {
+        "functionCode": "return items.map((item, index) => {\n  const original = $items('Prepare Payload', 0, index)?.json || {};\n  const pageId = original.pageId;\n  const word = original.word;\n  const rawResponse = item.json.response || item.json.data?.response || '';\n\n  if (!rawResponse) {\n    throw new Error('Ollama response missing JSON payload.');\n  }\n\n  let parsed;\n  try {\n    parsed = JSON.parse(rawResponse);\n  } catch (error) {\n    throw new Error(`Failed to parse Ollama JSON for ${word}: ${error.message}`);\n  }\n\n  const synonyms = Array.isArray(parsed.synonyms) ? parsed.synonyms.filter(Boolean) : [];\n\n  return {\n    json: {\n      pageId,\n      properties: {\n        Category: { select: { name: parsed.pos || 'unknown' } },\n        Pronunciation: { rich_text: [{ text: { content: parsed.ipa || '' } }] },\n        'Thai Meaning': { rich_text: [{ text: { content: parsed.thai || '' } }] },\n        Synonyms: { rich_text: [{ text: { content: synonyms.join(', ') } }] },\n        Example: { rich_text: [{ text: { content: parsed.example || '' } }] },\n        AI_done: { checkbox: true }\n      }\n    }\n  };\n});"
+      }
+    },
+    {
+      "id": "5",
+      "name": "Update Notion Page",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2,
+      "position": [1170, 300],
+      "parameters": {
+        "resource": "page",
+        "operation": "update",
+        "pageId": "={{$json.pageId}}",
+        "jsonParameters": true,
+        "properties": "={{$json.properties}}"
+      },
+      "credentials": {
+        "notionApi": {
+          "id": "replace-with-your-credential-id",
+          "name": "Notion Personal Integration"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Notion Trigger": {
+      "main": [
+        [
+          {
+            "node": "Prepare Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Payload": {
+      "main": [
+        [
+          {
+            "node": "Call Ollama",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Ollama": {
+      "main": [
+        [
+          {
+            "node": "Transform AI JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform AI JSON": {
+      "main": [
+        [
+          {
+            "node": "Update Notion Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "saveManualExecutions": true
+  },
+  "versionId": "00000000-0000-0000-0000-000000000000"
+}

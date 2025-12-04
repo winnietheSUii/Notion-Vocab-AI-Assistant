@@ -1,0 +1,47 @@
+version: "3.9"
+
+services:
+  n8n:
+    image: n8nio/n8n:1.54.1
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      - N8N_HOST=${N8N_HOST:-localhost}
+      - N8N_PORT=${N8N_PORT:-5678}
+      - N8N_PROTOCOL=${N8N_PROTOCOL:-http}
+      - N8N_BASIC_AUTH_ACTIVE=${N8N_BASIC_AUTH_ACTIVE:-true}
+      - N8N_BASIC_AUTH_USER=${N8N_BASIC_AUTH_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD:-change-me}
+      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE:-UTC}
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - WEBHOOK_URL=${WEBHOOK_URL:-}
+      - NOTION_ACCESS_TOKEN=${NOTION_ACCESS_TOKEN}
+      - NOTION_DATABASE_ID=${NOTION_DATABASE_ID}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
+    ports:
+      - "${N8N_PORT:-5678}:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - shared_data:/workspace/shared
+    depends_on:
+      - ollama
+
+  ollama:
+    image: ollama/ollama:0.3.12
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-phi3:mini}
+    command: /bin/sh -c "ollama pull ${OLLAMA_MODEL:-phi3:mini} && exec ollama serve"
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+      - shared_data:/workspace/shared
+
+volumes:
+  n8n_data:
+  ollama_models:
+  shared_data:
