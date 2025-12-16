@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   n8n:
-    image: n8nio/n8n:1.54.1
+    image: n8nio/n8n:latest
     restart: unless-stopped
     env_file:
       - ./.env
@@ -28,7 +28,7 @@ services:
       - ollama
 
   ollama:
-    image: ollama/ollama:0.3.12
+    image: ollama/ollama:latest
     container_name: ollama
     restart: unless-stopped
     ports:

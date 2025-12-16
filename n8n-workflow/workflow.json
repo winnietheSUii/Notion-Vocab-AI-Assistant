@@ -1,95 +1,178 @@
 {
-  "name": "Notion Vocab AI Automation",
   "nodes": [
     {
-      "id": "1",
-      "name": "Notion Trigger",
-      "type": "n8n-nodes-base.notionTrigger",
-      "typeVersion": 1,
-      "position": [200, 300],
       "parameters": {
-        "resource": "database",
-        "databaseId": "={{$env.NOTION_DATABASE_ID}}",
-        "event": "pageUpdated",
-        "filters": {
-          "matchType": "anyFilter",
-          "conditions": [
+        "pollTimes": {
+          "item": [
             {
-              "property": "AI_done",
-              "checkbox": {
-                "equals": false
-              }
+              "mode": "everyMinute"
             }
           ]
         },
-        "options": {
-          "limit": 20,
-          "pollTime": "5m"
+        "event": "pagedUpdatedInDatabase",
+        "databaseId": {
+          "__rl": true,
+          "value": "={{$env.NOTION_DATABASE_ID}}",
+          "mode": "list",
+          "cachedResultName": "Vocabulary Book",
+          "cachedResultUrl": ""
         }
       },
+      "id": "2799c8b1-0254-450b-b509-1d4bff764ce4",
+      "name": "Notion Trigger",
+      "type": "n8n-nodes-base.notionTrigger",
+      "typeVersion": 1,
+      "position": [
+        288,
+        288
+      ],
       "credentials": {
         "notionApi": {
           "id": "replace-with-your-credential-id",
-          "name": "Notion Personal Integration"
+          "name": "Notion account"
         }
       }
     },
     {
-      "id": "2",
+      "parameters": {},
+      "id": "d2f1ff45-71ff-4896-8345-0df3a77ab792",
       "name": "Prepare Payload",
       "type": "n8n-nodes-base.function",
       "typeVersion": 1,
-      "position": [430, 300],
-      "parameters": {
-        "functionCode": "const promptTemplate = `You are an advanced English lexicographer who teaches vocabulary at a B2–C2 level. Output ONLY VALID JSON (no markdown, no code fences).\\n\\nAllowed POS values (choose only ONE):\\n- \"V: Intransitive\"\\n- \"V: Transitive\"\\n- \"V: Phrasal\"\\n- \"Noun\"\\n- \"Adjective\"\\n- \"Adverb\"\\n- \"Preposition\"\\n- \"Interjection\"\\n- \"Idiom\"\\n- \"Phrase\"\\n\\nYour JSON MUST include the keys: pos, ipa, synonyms, antonyms, example.\\n\\nRules:\\n- Use IPA slashes (e.g. \"/ˈtɛst/\").\\n- Synonyms: provide a short but meaningful set (max ~5), prioritizing useful B2–C2 vocabulary. Return as a JSON array of strings.\\n- Antonyms: include only when appropriate; also return as a JSON array of strings.\\n- Example: one natural, elegant sentence showing real usage.\\n- DO NOT include Thai, definitions, commentary, markdown, or backticks.\\n\\nReturn MINIFIED JSON like this:\\n{\\"pos\\":\\"Noun\\",\\"ipa\\":\\"/x/\\",\\"synonyms\\":[\\"a\\",\\"b\\"],\\"antonyms\\":[\\"c\\"],\\"example\\":\\"...\\"}\\n\\nWord: {{word}}`;\\n\\nreturn items\\n  .map(item => {\\n    const pageId = item.json.id;\\n    const word = item.json.English?.trim();\\n\\n    if (!word) return null;\\n\\n    const prompt = promptTemplate.replace('{{word}}', word);\\n\\n    return {\\n      json: {\\n        pageId,\\n        word,\\n        prompt,\\n      }\\n    };\\n  })\\n  .filter(Boolean);"
-      }
+      "position": [
+        512,
+        288
+      ]
     },
     {
-      "id": "3",
+      "parameters": {
+        "requestMethod": "POST",
+        "url": "http://ollama:11434/api/generate",
+        "responseFormat": "string",
+        "jsonParameters": true,
+        "options": {
+          "bodyContentType": "json"
+        },
+        "bodyParametersJson": "={\n  \"model\": \"phi3:mini\",\n  \"prompt\": \"You are an English lexicography assistant.\\n\\nReturn EXACTLY ONE valid JSON object. Output JSON only.\\n\\nThe JSON must contain ONLY these keys:\\n- pos\\n- cefr\\n- ipa\\n- synonyms\\n- antonyms\\n- example\\n\\nRules:\\n- pos must be ONE of: \\\"V: Intransitive\\\", \\\"V: Transitive\\\", \\\"V: Phrasal\\\", \\\"Noun\\\", \\\"Adjective\\\", \\\"Adverb\\\", \\\"Preposition\\\", \\\"Interjection\\\", \\\"Idiom\\\", \\\"Phrase\\\"\\n- cefr must be ONE of: \\\"B1\\\", \\\"B2\\\", \\\"C1\\\", \\\"C2\\\"\\n- ipa must use IPA symbols with slashes\\n- synonyms must be 1–5 common, educational words (array)\\n- antonyms must be 0–5 words (array, empty if none)\\n- Do not repeat the target word in synonyms or antonyms\\n- example must be ONE natural sentence\\n\\nFormatting rules:\\n- Output ONE JSON object only\\n- No markdown, no explanations, no extra text\\n- If unsure, prefer valid JSON over linguistic perfection\\n\\nExample format:\\n{\\\"pos\\\":\\\"Adjective\\\",\\\"cefr\\\":\\\"B2\\\",\\\"ipa\\\":\\\"/x/\\\",\\\"synonyms\\\":[\\\"a\\\"],\\\"antonyms\\\":[],\\\"example\\\":\\\"...\\\"}\\n\\nWord: {{ $json.English }}\",\n \"stream\": false\n\n}\n"
+      },
+      "id": "455cb41d-0ee0-4e66-9953-4935bb288b11",
       "name": "Call Ollama",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 1,
-      "position": [680, 300],
-      "parameters": {
-        "requestMethod": "POST",
-        "url": "={{ ($env.OLLAMA_BASE_URL || 'http://ollama:11434') + '/api/generate' }}",
-        "jsonParameters": true,
-        "options": {
-          "bodyContentType": "json",
-          "responseFormat": "json"
-        },
-        "body": "={{ { model: $env.OLLAMA_MODEL || 'phi3:mini', prompt: $json.prompt, format: 'json', stream: false } }}"
-      }
+      "position": [
+        768,
+        288
+      ]
     },
     {
-      "id": "4",
+      "parameters": {
+        "functionCode": "// 1. Get the JSON string from Ollama\nconst raw = $json.data?.response || $json.response || \"\";\n\n// 2. Safety check\nif (typeof raw !== \"string\" || !raw.trim()) {\n  return [{\n    json: {\n      error: \"EMPTY_OR_INVALID_RESPONSE\",\n      raw\n    }\n  }];\n}\n\n// 3. Clean markdown / fences defensively\nconst cleaned = raw\n  .replace(/```json/gi, \"\")\n  .replace(/```/g, \"\")\n  .trim();\n\n// 4. Parse JSON\nlet parsed;\ntry {\n  parsed = JSON.parse(cleaned);\n} catch (e) {\n  return [{\n    json: {\n      error: \"JSON_PARSE_FAILED\",\n      message: e.message,\n      raw: cleaned\n    }\n  }];\n}\n\n// 5. Validate required keys\nconst required = [\"pos\", \"cefr\", \"ipa\", \"synonyms\", \"antonyms\", \"example\"];\nfor (const key of required) {\n  if (!(key in parsed)) {\n    return [{\n      json: {\n        error: \"MISSING_KEY\",\n        missing: key,\n        parsed\n      }\n    }];\n  }\n}\n\n// 6. Normalize POS (LLM-proof)\nconst POS_MAP = {\n  \"v: intransitive\": \"V: Intransitive\",\n  \"v: transitive\": \"V: Transitive\",\n  \"v: phrasal\": \"V: Phrasal\",\n  \"noun\": \"Noun\",\n  \"adjective\": \"Adjective\",\n  \"adverb\": \"Adverb\",\n  \"preposition\": \"Preposition\",\n  \"interjection\": \"Interjection\",\n  \"idiom\": \"Idiom\",\n  \"phrase\": \"Phrase\"\n};\n\nif (typeof parsed.pos === \"string\") {\n  const key = parsed.pos.trim().toLowerCase();\n  if (POS_MAP[key]) {\n    parsed.pos = POS_MAP[key];\n  }\n}\n\n// 7. Normalize CEFR (uppercase guarantee)\nif (typeof parsed.cefr === \"string\") {\n  parsed.cefr = parsed.cefr.toUpperCase();\n}\n\n// 8. Convert arrays → comma-separated strings\nconst toString = (v) =>\n  Array.isArray(v) ? v.join(\", \") : (v ?? \"\");\n\nparsed.synonyms = toString(parsed.synonyms);\nparsed.antonyms = toString(parsed.antonyms);\n\n// 9. Final output ✅\nreturn [{\n  json: parsed\n}];\n"
+      },
+      "id": "d4746598-4c6b-401c-bad0-67554f21b856",
       "name": "Transform AI JSON",
       "type": "n8n-nodes-base.function",
       "typeVersion": 1,
-      "position": [920, 300],
-      "parameters": {
-        "functionCode": "// 1. Take raw NDJSON from Ollama\\nconst raw = $json.data || $json.body || $json.result || '';\\n\\n// 2. Split into NDJSON lines\\nconst lines = raw.split('\\n');\\n\\n// 3. Extract 'response' field from each line\\nlet pieces = [];\\nfor (const line of lines) {\\n  try {\\n    if (!line.trim()) continue;\\n    const obj = JSON.parse(line);\\n    if (typeof obj.response === 'string') {\\n      pieces.push(obj.response);\\n    }\\n  } catch (e) {}\\n}\\n\\n// 4. Merge all streamed tokens\\nlet merged = pieces.join('');\\n\\n// 5. Remove markdown fences\\nmerged = merged\\n  .replace(/```json/gi, '')\\n  .replace(/```/g, '')\\n  .trim();\\n\\n// 6. Find JSON object\\nconst match = merged.match(/\"{[\\s\\S]*}\"/);\\nif (!match) {\\n  throw new Error('No JSON object found:\\n' + merged);\\n}\\n\\nconst jsonString = match[0];\\n\\n// 7. Parse JSON\\nlet parsed;\\ntry {\\n  parsed = JSON.parse(jsonString);\\n} catch (err) {\\n  throw new Error('JSON parse failed:\\n' + err.message + '\\nRAW:\\n' + jsonString);\\n}\\n\\n// 8. Convert arrays to comma strings and flatten\\nfunction arrToString(arr) {\\n  if (!Array.isArray(arr)) return '';\\n  return arr.join(', ');\\n}\\n\\nconst synonyms = arrToString(parsed.synonyms);\\nconst antonyms = arrToString(parsed.antonyms);\\n\\n// 9. Build Notion properties (no Thai)\\nreturn [{\\n  json: {\\n    pageId: $items('Prepare Payload', 0, 0).json.pageId,\\n    properties: {\\n      Category: { select: { name: parsed.pos || 'unknown' } },\\n      Pronunciation: { rich_text: [{ text: { content: parsed.ipa || '' } }] },\\n      Synonyms: { rich_text: [{ text: { content: synonyms } }] },\\n      Antonyms: { rich_text: [{ text: { content: antonyms } }] },\\n      Example: { rich_text: [{ text: { content: parsed.example || '' } }] },\\n      AI_done: { checkbox: true }\\n    }\\n  }\\n}];"
-      }
+      "position": [
+        1008,
+        288
+      ]
     },
     {
-      "id": "5",
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "update",
+        "pageId": {
+          "__rl": true,
+          "value": "={{ $('Notion Trigger').item.json.id }}",
+          "mode": "id"
+        },
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Antonyms|rich_text",
+              "textContent": "={{ $json.antonyms }}"
+            },
+            {
+              "key": "Category|multi_select",
+              "multiSelectValue": "={{ $json.pos }}"
+            },
+            {
+              "key": "CEFR|select",
+              "selectValue": "={{ $json.cefr }}"
+            },
+            {
+              "key": "Examples|rich_text",
+              "textContent": "={{ $json.example }}"
+            },
+            {
+              "key": "Synonyms|rich_text",
+              "textContent": "={{ $json.synonyms }}"
+            },
+            {
+              "key": "Pronunciation|rich_text",
+              "textContent": "={{ $json.ipa }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e0dd0b0a-fc74-4c2b-901a-b9f71c8b442e",
       "name": "Update Notion Page",
       "type": "n8n-nodes-base.notion",
       "typeVersion": 2,
-      "position": [1170, 300],
-      "parameters": {
-        "resource": "page",
-        "operation": "update",
-        "pageId": "={{$json.pageId}}",
-        "jsonParameters": true,
-        "properties": "={{$json.properties}}"
-      },
+      "position": [
+        1264,
+        288
+      ],
       "credentials": {
         "notionApi": {
           "id": "replace-with-your-credential-id",
-          "name": "Notion Personal Integration"
+          "name": "Notion account"
         }
       }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "2d5884af-58c8-4910-b2a5-50a7f150ffb4",
+              "leftValue": true,
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "exists",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "50a9f66a-7733-4563-8669-12c269d7c2d0",
+              "leftValue": "={{    $json.pos    && $json.cefr    && $json.ipa    && typeof $json.synonyms === 'string' || Array.isArray($json.synonyms)   && $json.example  }}",
+              "rightValue": "=true",
+              "operator": {
+                "type": "boolean",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c61b3108-0ea3-4015-8abc-c007776ff31f",
+      "name": "If",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        880,
+        464
+      ]
     }
   ],
   "connections": {
@@ -119,7 +202,7 @@
       "main": [
         [
           {
-            "node": "Transform AI JSON",
+            "node": "If",
             "type": "main",
             "index": 0
           }
@@ -136,11 +219,29 @@
           }
         ]
       ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Transform AI JSON",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
-  "active": false,
-  "settings": {
-    "saveManualExecutions": true
-  },
-  "versionId": "00000000-0000-0000-0000-000000000000"
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "1ff0ed6286202e7cbf4460d6b9b0b299035da6ed691cec6b3d6fb5b4a6aa3ad1"
+  }
 }
